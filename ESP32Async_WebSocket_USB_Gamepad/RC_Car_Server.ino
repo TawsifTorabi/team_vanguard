@@ -2,8 +2,8 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 
-const char *ssid = "inferno";
-const char *password = "dAN_BR0WNinferno";
+const char *ssid = "ssid";
+const char *password = "password";
 
 int motor1Pin1 = 27;
 int motor1Pin2 = 26;
