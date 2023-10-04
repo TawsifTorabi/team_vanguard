@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>IoT RC Car Controller</title>
+</head>
+<body>
+<h4>Connect Gamepad</h4>
+<button id="stopButton">Stop</button>
+
+<br>
+<br>
+<input type="url" name="" id="serverAddress" value="ws://192.168.1.101:80/remote" style="width: 300px;"/>
+<br>
+
+<!-- Display which key is being pressed -->
+<p>Pressed Key: <span id="pressedKey">None</span></p>
+
+<!-- Display ping in milliseconds -->
+<p>Ping: <span id="pingValue">0</span></p>
+
+<!-- Button to start WebSocket connection -->
+<button id="connectButton" onclick="openWebSocket();">Connect</button>
+<button id="disconnectButton" onclick="closeWebSocket();" style="display: none;">Disconnect</button>
+<span id="connectionStatus">Not Connected</span>
+
+<script>
+    let webSocket = null;
+    let pingStart;
+    let pingInterval;
+
+    // Function to send a command to the RC car
+    async function sendCommand(command) {
+        if (webSocket) {
+            if (webSocket.readyState === WebSocket.CLOSED || webSocket.readyState === WebSocket.CLOSING) {
+                // If the WebSocket is closed or closing, do not reopen it here
+                console.log("WebSocket is closed or closing. Cannot send command.");
+                openWebSocket();
+            }
+            if (webSocket.readyState === WebSocket.OPEN) {
+                webSocket.send(command);
+            }
+        } else {
+            console.error("WebSocket is not connected.");
+        }
+    }
+
+    // Function to open a WebSocket connection
+    async function openWebSocket() {
+        const serverAddress = document.getElementById('serverAddress').value;
+        webSocket = new WebSocket(serverAddress);
+        webSocket.onopen = function () {
+            console.log("WebSocket connected to:", serverAddress);
+            document.getElementById("connectionStatus").textContent = "Connected";
+            document.getElementById("connectButton").style.display = "none";
+            document.getElementById("disconnectButton").style.display = "inline-block";
+            pingInterval = setInterval(() => {
+                pingStart = Date.now();
+                webSocket.send("ping");
+            }, 1000); // Send ping every 1 second
+        };
+        webSocket.onclose = function () {
+            console.log("WebSocket closed.");
+            document.getElementById("connectionStatus").textContent = "Not Connected";
+            document.getElementById("connectButton").style.display = "inline-block";
+            document.getElementById("disconnectButton").style.display = "none";
+            clearInterval(pingInterval);
+        };
+        webSocket.onerror = function (error) {
+            console.error("WebSocket error:", error);
+        };
+        webSocket.onmessage = function (event) {
+            if (event.data === "pong") {
+                const pingValue = Date.now() - pingStart;
+                document.getElementById("pingValue").textContent = pingValue + " ms";
+            }
+        };
+    }
+
+    function closeWebSocket() {
+        if (webSocket) {
+            webSocket.close();
+            clearInterval(pingInterval);
+        }
+    }
+
+    
+        // Function to poll gamepad input
+        async function gameLoop() {
+            var gamepad = navigator.getGamepads()[0]; // Get the first controller.
+            if (gamepad && gamepad.connected) {
+                // Check gamepad buttons
+                if (gamepad.buttons[0].pressed) {
+                    sendCommand("forward");
+                    document.getElementById("pressedKey").textContent = "Forward";
+                } else if (gamepad.buttons[3].pressed) {
+                    sendCommand("right");
+                    document.getElementById("pressedKey").textContent = "Right";
+                } else if (gamepad.buttons[2].pressed) {
+                    sendCommand("backward");
+                    document.getElementById("pressedKey").textContent = "Backward";
+                } else if (gamepad.buttons[1].pressed) {
+                    sendCommand("left");
+                    document.getElementById("pressedKey").textContent = "Left";
+                } else {
+                    sendCommand("stop");
+                    document.getElementById("pressedKey").textContent = "None";
+                }
+            }
+        }
+
+        var game_loop;
+
+        // When a controller is connected, start the game loop to check for button presses
+        window.addEventListener("gamepadconnected", function (e) {
+            console.log("Gamepad %s connected at %d", e.gamepad.id, e.gamepad.index);
+            game_loop = setInterval(gameLoop, 50); // Check if a button was pressed 20 times every second.
+        });
+
+        // When a controller is disconnected, stop checking
+        window.addEventListener("gamepaddisconnected", function (e) {
+            console.log("Gamepad %s disconnected", e.gamepad.id);
+            clearInterval(game_loop);
+        });
+
+        document.getElementById("stopButton").addEventListener("click", function () {
+            sendCommand("stop");
+            document.getElementById("pressedKey").textContent = "None";
+        });
+
+        // Open the WebSocket connection initially
+        openWebSocket();
+</script>
+</body>
+</html>
