@@ -1,5 +1,3 @@
-//https://github.com/me-no-dev/AsyncTCP
-//https://github.com/me-no-dev/ESPAsyncWebServer
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
@@ -39,54 +37,75 @@ void notifyClients() {
   ws.textAll(String("Notification"));
 }
 
-void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
-  lastMessageTime = millis(); // Reset the timeout timer
-  AwsFrameInfo *info = (AwsFrameInfo *)arg;
-  if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
-    data[len] = 0;
-    if (strcmp((char *)data, "forward") == 0) {
-      motor1Speed = 150;
-      motor2Speed = 150;
-      digitalWrite(motor1Pin1, LOW);
-      digitalWrite(motor1Pin2, HIGH);
-      digitalWrite(motor2Pin1, HIGH);
-      digitalWrite(motor2Pin2, LOW);
-      notifyClients();
-    } else if (strcmp((char *)data, "backward") == 0) {
-      motor1Speed = 150;
-      motor2Speed = 150;
-      digitalWrite(motor1Pin1, HIGH);
-      digitalWrite(motor1Pin2, LOW);
-      digitalWrite(motor2Pin1, LOW);
-      digitalWrite(motor2Pin2, HIGH);
-      notifyClients();
-    } else if (strcmp((char *)data, "left") == 0) {
-      motor1Speed = 100;
-      motor2Speed = 100;
-      digitalWrite(motor1Pin1, LOW);
-      digitalWrite(motor1Pin2, HIGH);
-      digitalWrite(motor2Pin1, LOW);
-      digitalWrite(motor2Pin2, HIGH);
-      notifyClients();
-    } else if (strcmp((char *)data, "right") == 0) {
-      motor1Speed = 100;
-      motor2Speed = 100;
-      digitalWrite(motor1Pin1, HIGH);
-      digitalWrite(motor1Pin2, LOW);
-      digitalWrite(motor2Pin1, HIGH);
-      digitalWrite(motor2Pin2, LOW);
-      notifyClients();
-    } else if (strcmp((char *)data, "stop") == 0) {
-      stopMotors();
-      notifyClients();
-    } else if (strcmp((char *)data, "ping") == 0) {
-      ws.textAll("pong");
-    }
 
-    analogWrite(enable1Pin, motor1Speed);
-    analogWrite(enable2Pin, motor2Speed);
-  }
+
+
+
+
+
+void handleWebSocketMessage(void *arg, uint8_t *data, size_t len) {
+    lastMessageTime = millis(); // Reset the timeout timer
+    AwsFrameInfo *info = (AwsFrameInfo *)arg;
+    if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+        data[len] = 0;
+        const char *message = (char *)data;
+        Serial.printf(message);
+        if (strncmp(message, "direction:", 10) == 0) {
+            // Parse the direction and speed values
+            char direction[10];
+            int speed1, speed2;
+            if (sscanf(message + 10, "%9[^,],speed:%d,%d", direction, &speed1, &speed2) == 3) {
+                motor1Speed = speed1;
+                motor2Speed = speed2;
+
+                if (strcmp(direction, "forward") == 0) {
+                    // Handle forward direction
+                    digitalWrite(motor1Pin1, LOW);
+                    digitalWrite(motor1Pin2, HIGH);
+                    digitalWrite(motor2Pin1, HIGH);
+                    digitalWrite(motor2Pin2, LOW);
+                } else if (strcmp(direction, "backward") == 0) {
+                    // Handle backward direction
+                    digitalWrite(motor1Pin1, HIGH);
+                    digitalWrite(motor1Pin2, LOW);
+                    digitalWrite(motor2Pin1, LOW);
+                    digitalWrite(motor2Pin2, HIGH);
+                } else if (strcmp(direction, "left") == 0) {
+                    // Handle left direction
+                    digitalWrite(motor1Pin1, LOW);
+                    digitalWrite(motor1Pin2, HIGH);
+                    digitalWrite(motor2Pin1, LOW);
+                    digitalWrite(motor2Pin2, HIGH);
+                } else if (strcmp(direction, "right") == 0) {
+                    // Handle right direction
+                    digitalWrite(motor1Pin1, HIGH);
+                    digitalWrite(motor1Pin2, LOW);
+                    digitalWrite(motor2Pin1, HIGH);
+                    digitalWrite(motor2Pin2, LOW);
+                } else {
+                    // Default to stop
+                    stopMotors();
+                }
+
+                notifyClients();
+            }
+        } else if (strcmp(message, "stop") == 0) {
+            stopMotors();
+            notifyClients();
+        } else if (strcmp(message, "ping") == 0) {
+            ws.textAll("pong");
+        }
+
+        analogWrite(enable1Pin, motor1Speed);
+        analogWrite(enable2Pin, motor2Speed);
+    }
 }
+
+
+
+
+
+
 
 void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
              void *arg, uint8_t *data, size_t len) {
