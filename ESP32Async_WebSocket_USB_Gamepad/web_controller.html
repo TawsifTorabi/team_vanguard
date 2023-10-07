@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -10,7 +9,7 @@
 
 <br>
 <br>
-<input type="url" name="" id="serverAddress" value="ws://192.168.1.101:80/remote" style="width: 300px;"/>
+<input type="url" name="" id="serverAddress" value="ws://192.168.1.100:80/remote" style="width: 300px;"/>
 <br>
 
 <!-- Display which key is being pressed -->
@@ -28,6 +27,9 @@
     let webSocket = null;
     let pingStart;
     let pingInterval;
+    let maxSpeed = 255; // Maximum speed
+    let motor1Speed = 0;
+    let motor2Speed = 0;
 
     // Function to send a command to the RC car
     async function sendCommand(command) {
@@ -39,6 +41,7 @@
             }
             if (webSocket.readyState === WebSocket.OPEN) {
                 webSocket.send(command);
+				console.log(command);
             }
         } else {
             console.error("WebSocket is not connected.");
@@ -83,53 +86,88 @@
             clearInterval(pingInterval);
         }
     }
-
-    
-        // Function to poll gamepad input
-        async function gameLoop() {
-            var gamepad = navigator.getGamepads()[0]; // Get the first controller.
-            if (gamepad && gamepad.connected) {
-                // Check gamepad buttons
-                if (gamepad.buttons[0].pressed) {
-                    sendCommand("forward");
-                    document.getElementById("pressedKey").textContent = "Forward";
-                } else if (gamepad.buttons[3].pressed) {
-                    sendCommand("right");
-                    document.getElementById("pressedKey").textContent = "Right";
-                } else if (gamepad.buttons[2].pressed) {
-                    sendCommand("backward");
-                    document.getElementById("pressedKey").textContent = "Backward";
-                } else if (gamepad.buttons[1].pressed) {
-                    sendCommand("left");
-                    document.getElementById("pressedKey").textContent = "Left";
-                } else {
-                    sendCommand("stop");
-                    document.getElementById("pressedKey").textContent = "None";
-                }
-            }
+// Function to poll gamepad input
+async function gameLoop() {
+    var gamepad = navigator.getGamepads()[0]; // Get the first controller.
+    if (gamepad && gamepad.connected) {
+        // Check ABXY buttons for full-speed control
+        if (gamepad.buttons[0].pressed) { // A button for full-speed forward
+            sendCommand("direction:forward,speed:255,255");
+            document.getElementById("pressedKey").textContent = "Full Speed Forward";
+            return;
+        } else if (gamepad.buttons[2].pressed) { // X button for full-speed backward
+            sendCommand("direction:backward,speed:255,255");
+            document.getElementById("pressedKey").textContent = "Full Speed Backward";
+            return;
+        } else if (gamepad.buttons[3].pressed) { // Y button for full-speed right
+            sendCommand("direction:right,speed:255,255");
+            document.getElementById("pressedKey").textContent = "Full Speed Right";
+            return;
+        } else if (gamepad.buttons[1].pressed) { // B button for full-speed left
+            sendCommand("direction:left,speed:255,255");
+            document.getElementById("pressedKey").textContent = "Full Speed Left";
+            return;
         }
 
-        var game_loop;
+        // Calculate motor speed based on joystick input (assuming X and Y axis)
+        const maxSpeed = 255; // Maximum speed
+        const xValue = gamepad.axes[2]; // X-axis input (-1 to 1)
+        const yValue = gamepad.axes[5]; // Y-axis input (-1 to 1)
 
-        // When a controller is connected, start the game loop to check for button presses
-        window.addEventListener("gamepadconnected", function (e) {
-            console.log("Gamepad %s connected at %d", e.gamepad.id, e.gamepad.index);
-            game_loop = setInterval(gameLoop, 50); // Check if a button was pressed 20 times every second.
-        });
+        // Map joystick input values directly to motor speed within the range of 0 to 255
+        let motor1Speed = Math.round(maxSpeed * (yValue + xValue));
+        let motor2Speed = Math.round(maxSpeed * (yValue - xValue));
 
-        // When a controller is disconnected, stop checking
-        window.addEventListener("gamepaddisconnected", function (e) {
-            console.log("Gamepad %s disconnected", e.gamepad.id);
-            clearInterval(game_loop);
-        });
+        // When yValue is less than -0.2, adjust the motor speed linearly within the range of 0 to 255
+        if (yValue < -0.2) {
+            const linearSpeed = Math.round(maxSpeed * (-yValue)); // Linear speed based on joystick position
+            motor1Speed = linearSpeed;
+            motor2Speed = linearSpeed;
+        }
 
-        document.getElementById("stopButton").addEventListener("click", function () {
-            sendCommand("stop");
-            document.getElementById("pressedKey").textContent = "None";
-        });
+        // Calculate direction based on joystick input
+        let direction = "stop";
+        if (yValue > 0.2) {
+            direction = "backward";
+        } else if (yValue < -0.2) {
+            direction = "forward";
+        } else if (xValue > 0.2) {
+            direction = "left";
+            motor2Speed = motor1Speed;
+        } else if (xValue < -0.2) {
+            direction = "right";
+            motor1Speed = motor2Speed;
+        }
 
-        // Open the WebSocket connection initially
-        openWebSocket();
+        // Send the command, direction, and motor speed
+        sendCommand(`direction:${direction},speed:${motor1Speed},${motor2Speed}`);
+
+        // Update the display
+        document.getElementById("pressedKey").textContent = `Speed: ${motor1Speed},${motor2Speed}, Direction: ${direction}`;
+    }
+}
+
+    var game_loop;
+
+    // When a controller is connected, start the game loop to check for button presses
+    window.addEventListener("gamepadconnected", function (e) {
+        console.log("Gamepad %s connected at %d", e.gamepad.id, e.gamepad.index);
+        game_loop = setInterval(gameLoop, 50); // Check if a button was pressed 20 times every second.
+    });
+
+    // When a controller is disconnected, stop checking
+    window.addEventListener("gamepaddisconnected", function (e) {
+        console.log("Gamepad %s disconnected", e.gamepad.id);
+        clearInterval(game_loop);
+    });
+
+    document.getElementById("stopButton").addEventListener("click", function () {
+        sendCommand("stop");
+        document.getElementById("pressedKey").textContent = "None";
+    });
+
+    // Open the WebSocket connection initially
+    openWebSocket();
 </script>
 </body>
 </html>
