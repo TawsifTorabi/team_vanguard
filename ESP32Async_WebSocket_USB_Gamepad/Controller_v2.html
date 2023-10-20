@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>IoT RC Car Controller</title>
+</head>
+<body>
+<h4>Connect Gamepad</h4>
+<button id="stopButton">Stop</button>
+
+<br>
+<br>
+<input type="url" name="" id="serverAddress" value="ws://192.168.1.100:80/remote" style="width: 300px;"/>
+<br>
+
+<!-- Display which key is being pressed -->
+<p>Pressed Key: <span id="pressedKey">None</span></p>
+
+<!-- Display ping in milliseconds -->
+<p>Ping: <span id="pingValue">0</span></p>
+<br>
+<!-- Button to start WebSocket connection -->
+<label for="slider">Max Speed Value: <span id="sliderValue">150</span></label></br>
+<input type="range" id="slider" min="50" max="255" value="150" step="1"></br>
+<br>
+<br>
+<!-- Button to start WebSocket connection -->
+<label for="slider2">Refresh Rate: <span id="sliderValue2">90</span></label></br>
+<input type="range" id="slider2" min="50" max="300" value="150" step="1"></br>ms
+<br>
+<!-- Button to start WebSocket connection -->
+<button id="connectButton" onclick="openWebSocket();">Connect</button>
+<button id="disconnectButton" onclick="closeWebSocket();" style="display: none;">Disconnect</button>
+<span id="connectionStatus">Not Connected</span>
+
+<script>
+    let webSocket = null;
+    let pingStart;
+    let pingInterval;
+    let maxSpeed = 150; // Maximum speed
+    let motor1Speed = 0;
+    let motor2Speed = 0;
+	let PollingRate = 90;
+	
+	// Get the slider element and the value span
+	const slider = document.getElementById("slider");
+	const sliderValue = document.getElementById("sliderValue");
+
+	// Add an event listener to update the displayed value when the slider changes
+	slider.addEventListener("input", function() {
+		maxSpeed = slider.value;
+		sliderValue.textContent = slider.value;
+		console.log("Speed Is:"+maxSpeed);
+	});
+
+	// Get the slider element and the value span
+	const slider2 = document.getElementById("slider2");
+	const sliderValue2 = document.getElementById("sliderValue2");
+
+	// Add an event listener to update the displayed value when the slider changes
+	slider2.addEventListener("input", function() {
+		PollingRate = slider2.value;
+		sliderValue2.textContent = slider2.value;
+		console.log("PollingRate Is:"+PollingRate);
+	});
+
+
+    // Function to send a command to the RC car
+    async function sendCommand(command) {
+        if (webSocket) {
+            if (webSocket.readyState === WebSocket.CLOSED || webSocket.readyState === WebSocket.CLOSING) {
+                // If the WebSocket is closed or closing, do not reopen it here
+                console.log("WebSocket is closed or closing. Cannot send command.");
+                openWebSocket();
+            }
+            if (webSocket.readyState === WebSocket.OPEN) {
+                webSocket.send(command);
+				console.log(command);
+            }
+        } else {
+            console.error("WebSocket is not connected.");
+        }
+    }
+
+    // Function to open a WebSocket connection
+    async function openWebSocket() {
+        const serverAddress = document.getElementById('serverAddress').value;
+        webSocket = new WebSocket(serverAddress);
+        webSocket.onopen = function () {
+            console.log("WebSocket connected to:", serverAddress);
+            document.getElementById("connectionStatus").textContent = "Connected";
+            document.getElementById("connectButton").style.display = "none";
+            document.getElementById("disconnectButton").style.display = "inline-block";
+            pingInterval = setInterval(() => {
+                pingStart = Date.now();
+                webSocket.send("ping");
+            }, 1000); // Send ping every 1 second
+        };
+        webSocket.onclose = function () {
+            console.log("WebSocket closed.");
+            document.getElementById("connectionStatus").textContent = "Not Connected";
+            document.getElementById("connectButton").style.display = "inline-block";
+            document.getElementById("disconnectButton").style.display = "none";
+            clearInterval(pingInterval);
+        };
+        webSocket.onerror = function (error) {
+            console.error("WebSocket error:", error);
+        };
+        webSocket.onmessage = function (event) {
+            if (event.data === "pong") {
+                const pingValue = Date.now() - pingStart;
+                document.getElementById("pingValue").textContent = pingValue + " ms";
+            }
+        };
+    }
+
+    function closeWebSocket() {
+        if (webSocket) {
+            webSocket.close();
+            clearInterval(pingInterval);
+        }
+    }
+	
+	
+	
+	let joystickKeyMessageSent = false; // Flag to track whether a message has been sent
+		
+	// Function to poll gamepad input
+	async function gameLoop() {
+		var gamepad = navigator.getGamepads()[0]; // Get the first controller.
+		if (gamepad && gamepad.connected) {
+			// Check ABXY buttons for full-speed control
+			if (gamepad.buttons[0].pressed) { // A button for full-speed forward
+				sendCommand("direction:forward,speed:255,255");
+				document.getElementById("pressedKey").textContent = "Full Speed Forward";
+				return;
+			} else if (gamepad.buttons[2].pressed) { // X button for full-speed backward
+				sendCommand("direction:backward,speed:255,255");
+				document.getElementById("pressedKey").textContent = "Full Speed Backward";
+				return;
+			} else if (gamepad.buttons[3].pressed) { // Y button for full-speed right
+				sendCommand("direction:right,speed:255,255");
+				document.getElementById("pressedKey").textContent = "Full Speed Right";
+				return;
+			} else if (gamepad.buttons[1].pressed) { // B button for full-speed left
+				sendCommand("direction:left,speed:255,255");
+				document.getElementById("pressedKey").textContent = "Full Speed Left";
+				return;
+			} else if (gamepad.buttons[7].pressed) { // B button for full-speed left
+				setTimeout(function() {
+					sendCommand("dipper");
+				}, 500);
+				document.getElementById("pressedKey").textContent = "Dipper";
+				return;
+			}
+
+			// Send the joystick key message once if it wasn't already sent
+			if (gamepad.buttons[6].pressed && !joystickKeyMessageSent) {
+				sendCommand("headlight");
+				joystickKeyMessageSent = true; // Set the flag to indicate that the message has been sent
+				document.getElementById("pressedKey").textContent = "Headlight";
+			} else if (!gamepad.buttons[6].pressed) {
+				joystickKeyMessageSent = false; // Reset the flag when the button is released
+			}
+			
+			
+			// Calculate motor speed based on joystick input (assuming X and Y axis)
+		
+			const xValue = gamepad.axes[2]; // X-axis input (-1 to 1)
+			const yValue = gamepad.axes[5]; // Y-axis input (-1 to 1)
+
+			// Map joystick input values directly to motor speed within the range of 0 to 255
+			let motor1Speed = Math.round(maxSpeed * (yValue + xValue));
+			let motor2Speed = Math.round(maxSpeed * (yValue - xValue));
+
+			// When yValue is less than -0.2, adjust the motor speed linearly within the range of 0 to 255
+			if (yValue < -0.2) {
+				const linearSpeed = Math.round(maxSpeed * (-yValue)); // Linear speed based on joystick position
+				motor1Speed = linearSpeed;
+				motor2Speed = linearSpeed;
+			}
+
+			// Calculate direction based on joystick input
+			let direction = "stop";
+			if (yValue > 0.2) {
+				direction = "backward";
+			} else if (yValue < -0.2) {
+				direction = "forward";
+			} else if (xValue > 0.2) {
+				direction = "left";
+				motor2Speed = motor1Speed;
+			} else if (xValue < -0.2) {
+				direction = "right";
+				motor1Speed = motor2Speed;
+			}
+
+			// Send the command, direction, and motor speed
+			
+				sendCommand(`direction:${direction},speed:${motor1Speed},${motor2Speed}`);
+			
+			
+			// Update the display
+			document.getElementById("pressedKey").textContent = `Speed: ${motor1Speed},${motor2Speed}, Direction: ${direction}`;
+		}
+	}
+
+
+
+    var game_loop;
+
+    // When a controller is connected, start the game loop to check for button presses
+    window.addEventListener("gamepadconnected", function (e) {
+        console.log("Gamepad %s connected at %d", e.gamepad.id, e.gamepad.index);
+        game_loop = setInterval(gameLoop, PollingRate); // Check if a button was pressed 20 times every second.
+    });
+
+    // When a controller is disconnected, stop checking
+    window.addEventListener("gamepaddisconnected", function (e) {
+        console.log("Gamepad %s disconnected", e.gamepad.id);
+        clearInterval(game_loop);
+    });
+
+    document.getElementById("stopButton").addEventListener("click", function () {
+        sendCommand("stop");
+        document.getElementById("pressedKey").textContent = "None";
+    });
+
+    // Open the WebSocket connection initially
+    openWebSocket();
+</script>
+</body>
+</html>
